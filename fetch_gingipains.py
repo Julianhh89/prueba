@@ -20,6 +20,7 @@ FIELDS = [
     "sequence",
 ]
 UNIPROT_URL = "https://rest.uniprot.org/uniprotkb/search"
+CSV_PATH = "gingipains.csv"
 
 
 def download_gingipains(tsv_path="gingipains.tsv"):
@@ -90,13 +91,32 @@ def load_to_sqlite(tsv_path="gingipains.tsv", db_path="moleculas.db"):
     return db_path
 
 
+def tsv_to_csv(tsv_path="gingipains.tsv", csv_path="gingipains.csv"):
+    print(f"Convirtiendo {tsv_path} a {csv_path}")
+    with open(tsv_path, encoding="utf-8", newline="") as in_file:
+        reader = csv.DictReader(in_file, delimiter="\t")
+        fieldnames = reader.fieldnames
+        if not fieldnames:
+            raise RuntimeError("No se pudieron leer los encabezados del TSV.")
+        with open(csv_path, "w", encoding="utf-8", newline="") as out_file:
+            writer = csv.DictWriter(out_file, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in reader:
+                writer.writerow(row)
+    print(f"Guardado el archivo {csv_path}")
+    return csv_path
+
+
 def main():
     tsv_path = "gingipains.tsv"
+    csv_path = CSV_PATH
     db_path = "moleculas.db"
     if "--no-db" in sys.argv:
         download_gingipains(tsv_path)
+        tsv_to_csv(tsv_path, csv_path)
         return
     download_gingipains(tsv_path)
+    tsv_to_csv(tsv_path, csv_path)
     load_to_sqlite(tsv_path, db_path)
     print("\nEjemplo de consulta:")
     print('  sqlite3 moleculas.db "SELECT accession, protein_name, organism_name FROM gingipains LIMIT 10;"')

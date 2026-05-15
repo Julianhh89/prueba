@@ -14,9 +14,10 @@ python3 fetch_gingipains.py
 Esto genera:
 
 - `gingipains.tsv` con los datos descargados
+- `gingipains.csv` con los mismos datos en formato CSV
 - `moleculas.db` con la tabla `gingipains`
 
-Si solo quieres descargar el TSV sin crear la base de datos:
+Si solo quieres descargar el TSV y CSV sin crear la base de datos:
 
 ```bash
 python3 fetch_gingipains.py --no-db
