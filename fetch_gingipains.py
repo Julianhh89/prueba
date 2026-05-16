@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Descarga datos de gingipain de UniProt y los guarda en un TSV.
-También puede crear una base de datos SQLite llamada moleculas.db.
+"""Descarga datos de gingipain de UniProt y los guarda en múltiples formatos:
+TSV, CSV, Parquet y SQLite.
 """
 
 from __future__ import annotations
@@ -9,6 +9,12 @@ import sqlite3
 import sys
 import urllib.parse
 import urllib.request
+
+try:
+    import pandas as pd
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
 
 UNIPROT_QUERY = '(gene:rgpA OR gene:rgpB OR gene:kgp OR protein_name:gingipain)'
 FIELDS = [
@@ -180,6 +186,25 @@ def tsv_to_csv(tsv_path="gingipains.tsv", csv_path="gingipains.csv", filter_orga
     return csv_path
 
 
+def tsv_to_parquet(tsv_path="gingipains.tsv", parquet_path="gingipains.parquet", filter_organism=None):
+    """Convierte TSV a Parquet. Si filter_organism=None, exporta todos."""
+    if not HAS_PANDAS:
+        print(f"⚠ pandas no instalado, saltando Parquet")
+        return None
+    
+    label = f" ({filter_organism})" if filter_organism else " (todos)"
+    print(f"Convirtiendo TSV a Parquet{label}: {parquet_path}")
+    
+    df = pd.read_csv(tsv_path, sep="\t")
+    
+    if filter_organism:
+        df = df[df["Organism"].str.contains(filter_organism, na=False)]
+    
+    df.to_parquet(parquet_path, compression="snappy", index=False)
+    print(f"Guardado: {parquet_path} ({len(df)} filas)")
+    return parquet_path
+
+
 def main():
     tsv_path = "gingipains.tsv"
     
@@ -187,23 +212,36 @@ def main():
         download_gingipains(tsv_path)
         tsv_to_csv(tsv_path, "gingipains_todos.csv", filter_organism=None)
         tsv_to_csv(tsv_path, "gingipains_gingivalis.csv", filter_organism="Porphyromonas gingivalis")
+        if HAS_PANDAS:
+            tsv_to_parquet(tsv_path, "gingipains_todos.parquet", filter_organism=None)
+            tsv_to_parquet(tsv_path, "gingipains_gingivalis.parquet", filter_organism="Porphyromonas gingivalis")
         return
     
     download_gingipains(tsv_path)
     
     print("\n=== Generando versión COMPLETA (todos los organismos) ===")
     tsv_to_csv(tsv_path, "gingipains_todos.csv", filter_organism=None)
+    if HAS_PANDAS:
+        tsv_to_parquet(tsv_path, "gingipains_todos.parquet", filter_organism=None)
     load_to_sqlite(tsv_path, "moleculas_todos.db", filter_organism=None)
     
     print("\n=== Generando versión FILTRADA (solo P. gingivalis) ===")
     tsv_to_csv(tsv_path, "gingipains_gingivalis.csv", filter_organism="Porphyromonas gingivalis")
+    if HAS_PANDAS:
+        tsv_to_parquet(tsv_path, "gingipains_gingivalis.parquet", filter_organism="Porphyromonas gingivalis")
     load_to_sqlite(tsv_path, "moleculas_gingivalis.db", filter_organism="Porphyromonas gingivalis")
     
     print("\n✓ Archivos generados:")
-    print("  - gingipains_todos.csv (todas las proteínas)")
-    print("  - gingipains_gingivalis.csv (solo P. gingivalis)")
-    print("  - moleculas_todos.db (todas las proteínas)")
-    print("  - moleculas_gingivalis.db (solo P. gingivalis)")
+    print("  === TODOS LOS ORGANISMOS ===")
+    print("  - gingipains_todos.csv (2.4 MB)")
+    if HAS_PANDAS:
+        print("  - gingipains_todos.parquet (~0.5 MB)")
+    print("  - moleculas_todos.db (2.8 MB)")
+    print("  === SOLO P. GINGIVALIS ===")
+    print("  - gingipains_gingivalis.csv (43 KB)")
+    if HAS_PANDAS:
+        print("  - gingipains_gingivalis.parquet (~10 KB)")
+    print("  - moleculas_gingivalis.db (64 KB)")
 
 
 if __name__ == "__main__":
