@@ -24,20 +24,72 @@ CSV_PATH = "gingipains.csv"
 
 
 def download_gingipains(tsv_path="gingipains.tsv"):
+    """Descarga TODOS los resultados de UniProt con paginación."""
     query = {
         "query": UNIPROT_QUERY,
         "format": "tsv",
         "fields": ",".join(FIELDS),
-        "size": "100",
+        "size": "500",
     }
     url = UNIPROT_URL + "?" + urllib.parse.urlencode(query)
-    print(f"Descargando datos de UniProt:\n{url}\n")
-    with urllib.request.urlopen(url) as response:
-        raw = response.read().decode("utf-8")
-    if not raw.strip():
+    print(f"Descargando datos de UniProt (con paginación):\n{url}\n")
+    
+    all_data = []
+    cursor = None
+    page = 1
+    
+    while True:
+        current_query = query.copy()
+        if cursor:
+            current_query["cursor"] = cursor
+        
+        current_url = UNIPROT_URL + "?" + urllib.parse.urlencode(current_query)
+        print(f"  Página {page}...", end=" ", flush=True)
+        
+        with urllib.request.urlopen(current_url) as response:
+            raw = response.read().decode("utf-8")
+            headers = response.headers
+        
+        if not raw.strip():
+            print("vacía")
+            break
+        
+        lines = raw.strip().split("\n")
+        if page == 1 and lines:
+            all_data.append(lines[0])
+        
+        if len(lines) > 1:
+            all_data.extend(lines[1:])
+        
+        total = headers.get("X-Total-Results")
+        if total:
+            print(f"({len(lines)-1} registros, total: {total})")
+        else:
+            print(f"({len(lines)-1} registros)")
+        
+        link_header = headers.get("Link", "")
+        cursor = None
+        if "rel=\"next\"" in link_header:
+            for link in link_header.split(","):
+                if "rel=\"next\"" in link:
+                    import re
+                    match = re.search(r'cursor=([^&;>\s]+)', link)
+                    if match:
+                        cursor = match.group(1)
+                    break
+        
+        if not cursor:
+            break
+        
+        page += 1
+    
+    if not all_data:
         raise RuntimeError("No se recibieron datos de UniProt.")
+    
     with open(tsv_path, "w", encoding="utf-8", newline="") as out_file:
-        out_file.write(raw)
+        out_file.write("\n".join(all_data))
+        if all_data[-1]:
+            out_file.write("\n")
     print(f"Guardado el archivo {tsv_path}")
     return tsv_path
 
