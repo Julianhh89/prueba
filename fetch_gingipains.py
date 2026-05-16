@@ -94,8 +94,13 @@ def download_gingipains(tsv_path="gingipains.tsv"):
     return tsv_path
 
 
-def load_to_sqlite(tsv_path="gingipains.tsv", db_path="moleculas.db"):
-    print(f"Importando {tsv_path} a {db_path}")
+def load_to_sqlite(tsv_path="gingipains.tsv", db_path="moleculas.db", filter_organism=None):
+    """Importa datos a SQLite. Si filter_organism=None, importa todos.
+    Si filter_organism="Porphyromonas gingivalis", filtra a esa especie."""
+    
+    label = f" ({filter_organism})" if filter_organism else " (todos los organismos)"
+    print(f"Importando{label} a {db_path}")
+    
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute(
@@ -106,18 +111,20 @@ def load_to_sqlite(tsv_path="gingipains.tsv", db_path="moleculas.db"):
             protein_name TEXT,
             organism_name TEXT,
             gene_names TEXT,
-            sequence TEXT,
-            function TEXT
+            sequence TEXT
         )
         """
     )
+    
     with open(tsv_path, encoding="utf-8", newline="") as in_file:
         reader = csv.DictReader(in_file, delimiter="\t")
         rows = []
         for row in reader:
             organism = (row.get("Organism") or row.get("organism_name") or "").strip()
-            if "Porphyromonas gingivalis" not in organism:
+            
+            if filter_organism and filter_organism not in organism:
                 continue
+            
             rows.append(
                 (
                     row.get("Entry") or row.get("accession"),
@@ -126,52 +133,77 @@ def load_to_sqlite(tsv_path="gingipains.tsv", db_path="moleculas.db"):
                     organism,
                     row.get("Gene names") or row.get("gene_names"),
                     row.get("Sequence") or row.get("sequence"),
-                    "",
                 )
             )
+    
     cur.executemany(
         """
         INSERT OR REPLACE INTO gingipains
-        (accession, uniprot_id, protein_name, organism_name, gene_names, sequence, function)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (accession, uniprot_id, protein_name, organism_name, gene_names, sequence)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         rows,
     )
+    
     conn.commit()
     conn.close()
-    print(f"Importación terminada: {len(rows)} filas cargadas.")
+    print(f"Importación terminada: {len(rows)} filas cargadas en {db_path}")
     return db_path
 
 
-def tsv_to_csv(tsv_path="gingipains.tsv", csv_path="gingipains.csv"):
-    print(f"Convirtiendo {tsv_path} a {csv_path}")
+def tsv_to_csv(tsv_path="gingipains.tsv", csv_path="gingipains.csv", filter_organism=None):
+    """Convierte TSV a CSV. Si filter_organism=None, exporta todos."""
+    label = f" ({filter_organism})" if filter_organism else " (todos)"
+    print(f"Convirtiendo TSV a CSV{label}: {csv_path}")
+    
     with open(tsv_path, encoding="utf-8", newline="") as in_file:
         reader = csv.DictReader(in_file, delimiter="\t")
         fieldnames = reader.fieldnames
         if not fieldnames:
             raise RuntimeError("No se pudieron leer los encabezados del TSV.")
+        
+        rows = []
+        for row in reader:
+            if filter_organism:
+                organism = (row.get("Organism") or row.get("organism_name") or "").strip()
+                if filter_organism not in organism:
+                    continue
+            rows.append(row)
+        
         with open(csv_path, "w", encoding="utf-8", newline="") as out_file:
             writer = csv.DictWriter(out_file, fieldnames=fieldnames)
             writer.writeheader()
-            for row in reader:
+            for row in rows:
                 writer.writerow(row)
-    print(f"Guardado el archivo {csv_path}")
+    
+    print(f"Guardado: {csv_path} ({len(rows)} filas)")
     return csv_path
 
 
 def main():
     tsv_path = "gingipains.tsv"
-    csv_path = CSV_PATH
-    db_path = "moleculas.db"
+    
     if "--no-db" in sys.argv:
         download_gingipains(tsv_path)
-        tsv_to_csv(tsv_path, csv_path)
+        tsv_to_csv(tsv_path, "gingipains_todos.csv", filter_organism=None)
+        tsv_to_csv(tsv_path, "gingipains_gingivalis.csv", filter_organism="Porphyromonas gingivalis")
         return
+    
     download_gingipains(tsv_path)
-    tsv_to_csv(tsv_path, csv_path)
-    load_to_sqlite(tsv_path, db_path)
-    print("\nEjemplo de consulta:")
-    print('  sqlite3 moleculas.db "SELECT accession, protein_name, organism_name FROM gingipains LIMIT 10;"')
+    
+    print("\n=== Generando versión COMPLETA (todos los organismos) ===")
+    tsv_to_csv(tsv_path, "gingipains_todos.csv", filter_organism=None)
+    load_to_sqlite(tsv_path, "moleculas_todos.db", filter_organism=None)
+    
+    print("\n=== Generando versión FILTRADA (solo P. gingivalis) ===")
+    tsv_to_csv(tsv_path, "gingipains_gingivalis.csv", filter_organism="Porphyromonas gingivalis")
+    load_to_sqlite(tsv_path, "moleculas_gingivalis.db", filter_organism="Porphyromonas gingivalis")
+    
+    print("\n✓ Archivos generados:")
+    print("  - gingipains_todos.csv (todas las proteínas)")
+    print("  - gingipains_gingivalis.csv (solo P. gingivalis)")
+    print("  - moleculas_todos.db (todas las proteínas)")
+    print("  - moleculas_gingivalis.db (solo P. gingivalis)")
 
 
 if __name__ == "__main__":
